@@ -1,0 +1,159 @@
+Private Sub UserForm_Initialize()
+    ' Populate the list box with column headers from the data source
+    Dim tbl As ListObject
+    Set tbl = ActiveSheet.ListObjects(1)
+    
+    Dim i As Integer
+    For i = 2 To tbl.Range.Columns.Count
+        ListBox1.AddItem tbl.Range.Cells(1, i).Value
+    Next i
+End Sub
+
+Private Sub CommandButton1_Click()
+    ' Create pivot tables for the selected column headers
+    Dim tbl As ListObject
+    Set tbl = ActiveSheet.ListObjects(1)
+    
+    ' Create a new pivot cache
+    Dim pvtCache As PivotCache
+    Set pvtCache = ThisWorkbook.PivotCaches.Create( _
+    SourceType:=xlDatabase, _
+    SourceData:=tbl.Range)
+    
+    Dim i As Integer
+    Dim questionRegex As Object
+    Set questionRegex = CreateObject("VBScript.RegExp")
+    questionRegex.Pattern = "Q\d+(?:\.\d+)?"
+    
+    ' Create a dictionary to store the pivot tables for each multiple choice question
+    Dim pivotTables As Object
+    Set pivotTables = CreateObject("Scripting.Dictionary")
+    
+    For i = 0 To ListBox1.ListCount - 1
+        If ListBox1.Selected(i) Then
+            Dim header As String
+            header = ListBox1.List(i)
+            
+            ' Extract the question number from the header
+            Dim questionNumber As String
+            If questionRegex.test(header) Then
+                questionNumber = questionRegex.Execute(header)(0)
+                
+                ' If the question has a decimal point, it's a multiple choice question
+                If InStr(questionNumber, ".") > 0 Then
+                    ' Extract the question number without the option number
+                    questionNumber = left(questionNumber, InStr(questionNumber, ".") - 1)
+                    
+                    ' Create a new sheet if necessary and add pivot tables for each option
+                    If Not pivotTables.Exists(questionNumber) Then
+                        Dim ws As Worksheet
+                        Set ws = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+                        ws.Name = questionNumber
+                        
+
+                        
+                        ' Add a pivot table for each option of the multiple choice question
+                        Dim optionRegex As Object
+                        Set optionRegex = CreateObject("VBScript.RegExp")
+                        optionRegex.Pattern = questionNumber & "\.\d+"
+                        
+                        Dim j As Integer
+                        For j = 0 To ListBox1.ListCount - 1
+                            If ListBox1.Selected(j) Then
+                                Dim optionHeader As String
+                                optionHeader = ListBox1.List(j)
+                                If optionRegex.test(optionHeader) Then
+                                    ' Create a new pivot table
+                                    Dim pvt As PivotTable
+                                    Set pvt = pvtCache.CreatePivotTable( _
+                                        TableDestination:=ws.Cells(1, j + 1), _
+                                        TableName:="PivotTable_" & optionHeader)
+                                    
+                                    ' Set the row field
+                                    With pvt.PivotFields(optionHeader)
+                                        .Orientation = xlRowField
+                                        .Position = 1
+                                    End With
+                                    
+                                    ' Add the data field
+                                    With pvt
+                                        .AddDataField .PivotFields(tbl.ListColumns(1).Name), "Count of " & tbl.ListColumns(1).Name, xlCount
+                                    End With
+                                    
+                                    ' Autofit columns
+                                    ws.Cells.EntireColumn.AutoFit
+                                End If
+                            End If
+                        Next j
+                        
+                        ' Add the pivot tables for the multiple choice question to the dictionary
+                        pivotTables.Add questionNumber, ws
+                    End If
+                End If
+            Else
+                ' Use the column header itself if a question number can't be found
+                questionNumber = header
+            End If
+            
+        ' Create a new sheet for non-multiple choice questions
+        If Not pivotTables.Exists(questionNumber) Then
+         Set ws = ThisWorkbook.Sheets.Add(After:=ThisWorkbook.Sheets(ThisWorkbook.Sheets.Count))
+         ws.Name = questionNumber
+                        
+    ' Create a new pivot table
+    Dim pvt As PivotTable
+    Set pvt = pvtCache.CreatePivotTable( _
+        TableDestination:=ws.Cells(1, 1), _
+        TableName:="PivotTable_" & questionNumber)
+                
+    ' Set the row field
+    With pvt.PivotFields(header)
+        .Orientation = xlRowField
+        .Position = 1
+    End With
+                
+    ' Add the data field
+    With pvt
+        .AddDataField .PivotFields(tbl.ListColumns(1).Name), "Count of " & tbl.ListColumns(1).Name, xlCount
+    End With
+                
+    ' Autofit columns
+    ws.Cells.EntireColumn.AutoFit
+                
+    ' Add the pivot table to the dictionary
+    pivotTables.Add questionNumber, ws
+Else
+    ' Add a pivot table to an existing sheet for multiple choice questions
+    Set ws = pivotTables(questionNumber)
+                
+    ' Create a new pivot cache
+    Dim pvtCache As PivotCache
+    Set pvtCache = ThisWorkbook.PivotCaches.Create( _
+        SourceType:=xlDatabase, _
+        SourceData:=tbl.Range)
+                
+    ' Add a pivot table for the option
+    Dim pvt As PivotTable
+    Set pvt = pvtCache.CreatePivotTable( _
+        TableDestination:=ws.Cells(1, ws.ListObjects.Count + 2), _
+        TableName:="PivotTable_" & header)
+                
+    ' Set the row field
+    With pvt.PivotFields(header)
+        .Orientation = xlRowField
+        .Position = 1
+    End With
+                
+    ' Add the data field
+    With pvt
+        .AddDataField .PivotFields(tbl.ListColumns(1).Name), "Count of " & tbl.ListColumns(1).Name, xlCount
+    End With
+                
+    ' Autofit columns
+    ws.Cells.EntireColumn.AutoFit
+End If
+    
+    ' Close the user form
+    Unload Me
+End Sub
+
